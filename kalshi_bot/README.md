@@ -1,67 +1,71 @@
-# Kalshi favourites bot (paper trading)
+# Kalshi near-expiry favourites bot (paper trading)
 
-Makes lots of small trades on Kalshi prediction markets. It buys the heavily-favoured side (85–95¢)
-of liquid markets that are about to resolve, holds each position to settlement, and recycles the cash.
-**This is paper trading only.** It reads live public market data and simulates fills with Kalshi's fees.
-It cannot place real orders.
+The bot posts small resting buy orders on the heavily-favoured side (95–99¢) of Kalshi markets that
+resolve within the next hour, holds each one to settlement, and recycles the cash. **Paper trading only.**
+It reads live public market data and simulates fills and fees. It cannot place real orders.
 
-## Why this strategy
+## How the strategy was chosen
 
-- Kalshi contracts pay $1 if right and $0 if wrong. Prices are probabilities.
-- Published research on Kalshi trade data (Bürgi, Deng & Whelan, *Makers and Takers*) finds a
-  *favourite-longshot bias*: cheap longshots lose badly, while expensive favourites earn small positive
-  returns. Makers (resting orders) do better than takers. The authors also report that the bias has
-  been shrinking over time.
-- None of this needs speed. Positions are held to settlement, so a home internet connection is fine.
+`research.py` downloaded every trade in 2,998 random settled markets (Oct 28 – Nov 11, 2026). It then
+simulated what a small bot would actually get: **one $2–10 order per market, the first fill available,
+net of Kalshi fees including their round-up-to-the-cent rule.** Each result was checked separately on
+the earlier and later halves of the data. Full output is in `research_results_2026-11-11.txt`.
 
-## Backtest (`backtest.py`)
+| approach | result per filled order |
+|---|---|
+| **Taker** (buy at the ask), any band 50–99¢, any time window | **−1% to −3%**, consistently negative |
+| Maker (resting bid) 85–95¢ | about 0%, noise |
+| **Maker 95–99¢, resolving within 1h, $10 orders** | **+1.0% to +1.5% (±1%)**, positive in both halves |
 
-The script pulls recently settled markets and every real trade in them, then computes what each buyer
-earned after fees, grouped by the price they paid. Results for 1,200 random markets from the 7 days to
-2026-11-11 are in `backtest_results_2026-11-11.txt`. Per-market net return, 95% CI:
+Neighbouring settings (93–99¢, 96–99¢, under 30 minutes) were also positive, which suggests this isn't
+a single lucky slice. It's still only two weeks of data, and about 60 combinations were tested, so some
+false positives are expected. Treat it as the best available hypothesis, not a proven edge.
 
-| price paid | taker      | maker      |
-|------------|------------|------------|
-| 1–10¢      | −130% ±50  | −60% ±20   |
-| 10–30¢     | −54% ±12   | −48% ±9    |
-| 85–90¢     | +5.4% ±2.1 | +7.4% ±2.4 |
-| 90–95¢     | +2.0% ±1.6 | +3.3% ±1.9 |
-| 95–99¢     | +0.6% ±0.9 | +1.6% ±1.3 |
+An earlier version of this bot bought 85–95¢ favourites at the ask. Its first backtest looked positive
+because it averaged over every fill, including large late ones. Simulated at realistic bot scale, it loses.
 
-How to read this:
-- Only 85–95¢ shows a margin clearly above zero. Above 95¢ the edge is too small to separate from noise.
-- The data covers one week. Markets on the same game or the same crypto move together, so the real
-  uncertainty is wider than these intervals show. Re-run it before trusting it:
-  `python3 backtest.py --days 14 --max-markets 2000`
-- The payoff is asymmetric. At 90¢ a win pays 10¢ and a loss costs 90¢, so a single loss cancels about
-  nine wins. Expect long runs of small gains broken by sharp drops.
+Why maker orders and $10 sizes:
+- Kalshi's taker fee is four times the maker fee, and many series charge makers nothing.
+- Fees round up to the cent per order, so $2 orders lose an extra ~0.5%.
 
-## Run the paper bot
+## Risk
+
+- At 97¢ a win pays 3¢ and a loss costs 97¢, so one loss cancels about 32 wins. Expect long winning
+  streaks broken by sudden drops.
+- Related markets can lose together, e.g. several crypto 15-minute markets in one sharp move.
+- On $100 with $10 orders, a +1% edge is about 10¢ per filled order. Even if it holds, that's maybe a
+  few dollars a week, depending on fill rates.
+
+## Run it
 
 Requires Python 3.9+ and no other packages.
 
 ```bash
 cd kalshi_bot
-python3 paper_bot.py            # $100 bankroll, $2 per trade, 85-95c, resolving within 6h
-python3 paper_bot.py --report   # P&L summary from saved state
-python3 paper_bot.py --reset    # start over
-python3 paper_bot.py --help     # all settings (stake, price band, max open, maker mode...)
+python3 paper_bot.py --name through                       # conservative fill model (default)
+python3 paper_bot.py --name touch --fill-rule touch       # optimistic fill model, in a second terminal
+python3 paper_bot.py --name through --report              # P&L summary
 ```
 
-Every fill and settlement is written to `paper_trades.csv`. Let it run for at least 1–2 weeks and
-several hundred settled trades before drawing conclusions. Ten wins in a row prove nothing at these odds.
+On a Mac, prefix with `caffeinate -i` so it doesn't sleep. Every bid, fill and settlement is logged to
+`paper_trades_<name>.csv`.
 
-Known limitations:
-- Taker fills are assumed at the displayed best ask. That's realistic for $1–2 sizes, but not guaranteed.
-- `--mode maker` only counts a fill when a later public trade prints *below* the bid. That's
-  conservative, but it can't model fills a real order would get at its own price level.
-- Related markets can lose together, e.g. several crypto 15-minute markets in one sharp move.
-  `--max-per-event` only limits bets within a single event.
+About the fill models: a simulated resting order can't know where it sits in the queue.
+- `through` only counts a fill when a later trade prints *below* the bid, so we'd definitely have been
+  filled. This undercounts fills, and the fills it does count skew toward bad moments.
+- `touch` also counts sellers hitting bids at our price, which ignores the queue.
 
-## Going live (not built yet)
+A real order should land between the two runs.
 
-Only consider this if the paper results stay positive over hundreds of settled trades. Live trading
-needs a Kalshi account and an API key, should be tested first on Kalshi's demo exchange
-(`demo-api.kalshi.co`), and needs hard limits: max $ per trade, a daily loss stop and a kill switch.
+Other tools:
+- `research.py fetch` / `research.py analyze`: re-run the research on fresh data. Do this before ever
+  going live.
+- `backtest.py`: the original all-fills calibration table, by price band.
+
+## Going live (not built)
+
+Only consider it after a few weeks in which both paper runs and a fresh `research.py` agree. Live
+trading needs a Kalshi account, an API key, testing on Kalshi's demo exchange (`demo-api.kalshi.co`),
+and hard limits: max $ per order, a daily loss stop and a kill switch.
 
 Not financial advice. Prediction-market winnings are taxable.

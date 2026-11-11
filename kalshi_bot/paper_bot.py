@@ -1,22 +1,22 @@
-"""Paper-trading bot for Kalshi: makes many small simulated trades on live market data. No real money.
+"""Paper-trading bot for Kalshi: many small simulated trades on live market data. No real money.
 
-Strategy ("near-expiry favourites"): every few seconds, scan markets expected to resolve soon, and buy
-small amounts of the heavily-favoured side (default 85-95c) where the market is liquid and the spread is
-tight. Hold to settlement. Kalshi research and backtest.py both suggest favourites have been slightly
-underpriced (the favourite-longshot bias); the risk is that one loss at 95c wipes out ~19 wins.
+Strategy (chosen from research.py, 2,998 markets over 14 days, see research_results_*.txt):
+  Post resting buy orders (maker) at the best bid on the favoured side of markets priced 95-99c that
+  are expected to resolve within 1 hour. Hold to settlement. In the research this was the only
+  approach positive after fees in both halves of the data (about +1.0 to +1.5% per filled order at
+  $10 stakes, +-1%). Every taker (buy-at-the-ask) variant lost 1-3% after fees.
+  Risk: a loss at 97c costs ~32 wins' worth of profit. Expect long winning streaks broken by sharp drops.
 
 Fill model
-  taker (default): buy at the current best ask, pay Kalshi's taker fee. Close to what a real
-                   market order would get for small sizes.
-  maker:           post a simulated bid at the best bid; it only counts as filled if a later public
-                   trade prints *below* our price (strictly through us, so queue position can't
-                   flatter results). Maker fee charged conservatively.
+  maker (default): a simulated bid at the best bid. --fill-rule through (default) counts a fill only
+                   when a later public trade prints below our price: conservative. --fill-rule touch
+                   also counts sellers hitting bids at our price, which ignores queue position: optimistic.
+                   Real results should land between the two. Maker fee charged on every fill (conservative).
+  taker:           buy at the best ask and pay the taker fee (kept for comparison; the research says it loses).
 
-State is saved to paper_state.json, every fill/settlement appended to paper_trades.csv.
-
-Usage:  python3 paper_bot.py                  # defaults: $100 bankroll, $2 per trade
-        python3 paper_bot.py --mode maker --stake 1 --min-price 0.90 --max-price 0.96
-        python3 paper_bot.py --report         # print stats from saved state and exit
+Usage:  python3 paper_bot.py --name through                       # conservative fill model
+        python3 paper_bot.py --name touch --fill-rule touch       # optimistic, run side by side
+        python3 paper_bot.py --name through --report              # P&L for a run
 """
 import argparse
 import csv
@@ -33,6 +33,13 @@ from kalshi import Client, MAKER_RATE, TAKER_RATE, f, fee
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = os.path.join(HERE, "paper_state.json")
 LOG = os.path.join(HERE, "paper_trades.csv")
+
+
+def set_run_name(name):
+    global STATE, LOG
+    if name:
+        STATE = os.path.join(HERE, f"paper_state_{name}.json")
+        LOG = os.path.join(HERE, f"paper_trades_{name}.csv")
 
 
 def now():
@@ -157,7 +164,10 @@ class Bot:
                     continue
                 yp = f(t.get("yes_price_dollars"))
                 sp = yp if o["side"] == "yes" else 1 - yp
-                if sp < o["price"] - 1e-9:
+                # "through": someone traded below our bid (we would surely have been filled).
+                # "touch": a seller hit bids at our price (we might be behind others in the queue).
+                seller_hit = t.get("taker_side") != o["side"]
+                if sp < o["price"] - 1e-9 or (self.a.fill_rule == "touch" and seller_hit and sp <= o["price"] + 1e-9):
                     through += f(t.get("count_fp"))
             n = min(o["remaining"], int(through))
             if n > 0:
@@ -182,7 +192,8 @@ class Bot:
             for side in ("yes", "no"):
                 ask = f(m.get(f"{side}_ask_dollars"), 1.0)
                 bid = f(m.get(f"{side}_bid_dollars"), 0.0)
-                if not (self.a.min_price <= ask <= self.a.max_price):
+                ref = ask if self.a.mode == "taker" else bid
+                if not (self.a.min_price <= ref <= self.a.max_price):
                     continue
                 if ask - bid > self.a.max_spread + 1e-9:
                     continue
@@ -253,20 +264,23 @@ class Bot:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--mode", choices=["taker", "maker"], default="taker")
+    ap.add_argument("--mode", choices=["taker", "maker"], default="maker")
     ap.add_argument("--bankroll", type=float, default=100.0)
-    ap.add_argument("--stake", type=float, default=2.0, help="max $ per trade")
-    ap.add_argument("--min-price", type=float, default=0.85)
-    ap.add_argument("--max-price", type=float, default=0.95)
-    ap.add_argument("--max-spread", type=float, default=0.02)
-    ap.add_argument("--max-hours", type=float, default=6.0, help="only markets expected to resolve within N hours")
+    ap.add_argument("--stake", type=float, default=10.0, help="max $ per trade (small orders lose more to fee rounding)")
+    ap.add_argument("--min-price", type=float, default=0.95)
+    ap.add_argument("--max-price", type=float, default=0.99)
+    ap.add_argument("--max-spread", type=float, default=0.03)
+    ap.add_argument("--max-hours", type=float, default=1.0, help="only markets expected to resolve within N hours")
     ap.add_argument("--max-close-hours", type=float, default=72.0, help="pre-filter on scheduled close time")
     ap.add_argument("--min-volume", type=float, default=200.0, help="min 24h contracts traded")
-    ap.add_argument("--max-open", type=int, default=40)
+    ap.add_argument("--max-open", type=int, default=10)
     ap.add_argument("--max-per-event", type=int, default=1, help="avoid stacking correlated bets on one game")
     ap.add_argument("--max-new-per-loop", type=int, default=5)
     ap.add_argument("--cash-floor", type=float, default=0.0)
-    ap.add_argument("--order-ttl", type=float, default=600.0, help="maker: cancel unfilled bids after N s")
+    ap.add_argument("--order-ttl", type=float, default=300.0, help="maker: cancel unfilled bids after N s")
+    ap.add_argument("--fill-rule", choices=["through", "touch"], default="through",
+                    help="maker fill model: through = conservative, touch = optimistic")
+    ap.add_argument("--name", default="", help="run name, so several configurations can run side by side")
     ap.add_argument("--interval", type=float, default=30.0, help="seconds between scans")
     ap.add_argument("--report-every", type=float, default=600.0)
     ap.add_argument("--max-rps", type=float, default=8.0)
@@ -274,6 +288,7 @@ def main():
     ap.add_argument("--reset", action="store_true", help="delete saved paper state and start fresh")
     a = ap.parse_args()
 
+    set_run_name(a.name)
     if a.reset:
         for p in (STATE, LOG):
             if os.path.exists(p):

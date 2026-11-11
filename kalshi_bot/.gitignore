@@ -2,3 +2,6 @@ paper_state.json
 paper_state.json.tmp
 paper_trades.csv
 __pycache__/
+research_cache.jsonl
+paper_state_*.json
+paper_trades_*.csv
