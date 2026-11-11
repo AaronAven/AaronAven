@@ -1,0 +1,11 @@
+14 symbols, 60 sessions (2026-08-18 to 2026-11-10), cost 3.0 bps/side
+
+buy & hold over window (avg of symbols): -1.90%
+
+strategy        trades   win%  avg net/trade    95% CI  avg gross  portfolio total  worst day
+orb5               407  30.2%        -0.018%    0.099%     0.042%           -2.44%     -1.10%
+orb30              335  38.5%        -0.188%    0.099%    -0.128%          -12.54%     -1.96%
+open_to_close      840  45.4%        -0.099%    0.098%    -0.039%           -5.97%     -4.48%
+
+If the 95% CI is wider than the average, the result is indistinguishable from luck.
+Trades on the same day are correlated (the whole market moves together), so the true uncertainty is larger.
