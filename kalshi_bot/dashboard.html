@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalshi Paper Bot</title>
+<style>
+:root {
+  --surface-0: #f4f4f2; --surface-1: #fcfcfb; --border: #e3e2de;
+  --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #77766f;
+  --grid: #ecebe7; --axis: #c9c8c2;
+  --series-1: #2a78d6; --series-2: #eb6834;
+  --good: #006300; --critical: #b52a2a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: #111110; --surface-1: #1a1a19; --border: #2e2e2c;
+    --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #8f8e86;
+    --grid: #262624; --axis: #44443f;
+    --series-1: #3987e5; --series-2: #d95926;
+    --good: #4cc24c; --critical: #e66767;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--surface-0); color: var(--text-primary);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1120px; margin: 0 auto; padding: 20px 16px 48px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 10px; }
+.sub { color: var(--text-secondary); font-size: 13px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-top: 16px; }
+.runs { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.runs .card { margin-top: 16px; }
+.run-title { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-bottom: 4px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.hero { font-size: 30px; font-weight: 650; font-variant-numeric: tabular-nums; margin: 6px 0 2px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px 12px; margin-top: 12px; }
+.stat .k { color: var(--text-muted); font-size: 12px; }
+.stat .v { font-variant-numeric: tabular-nums; font-weight: 600; }
+.pos { color: var(--good); } .neg { color: var(--critical); }
+.chart-wrap { position: relative; }
+svg { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  display: none; min-width: 150px; z-index: 2; }
+.tip .row { display: flex; justify-content: space-between; gap: 12px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+th { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.title { white-space: normal; min-width: 220px; color: var(--text-secondary); }
+.scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+.tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+.tabs button { font: inherit; font-size: 13px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-secondary); cursor: pointer; }
+.tabs button[aria-pressed="true"] { background: var(--text-primary); color: var(--surface-1); border-color: var(--text-primary); }
+.note { color: var(--text-muted); font-size: 12px; margin-top: 8px; }
+.empty { color: var(--text-muted); padding: 24px 0; text-align: center; }
+.badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>Kalshi paper bot</h1>
+      <div class="sub">Paper trading. Maker bids at 95–99¢ on markets resolving within 1 hour.</div>
+    </div>
+    <div class="sub" id="updated">Loading…</div>
+  </header>
+
+  <div class="runs" id="runs"></div>
+
+  <section class="card">
+    <h2>Realised P&amp;L over time</h2>
+    <div class="legend" id="legend"></div>
+    <div class="chart-wrap" id="chartWrap">
+      <svg id="chart" viewBox="0 0 1000 300" role="img" aria-label="Cumulative realised profit and loss per run"></svg>
+      <div class="tip" id="tip"></div>
+    </div>
+    <div class="note">Settled trades only. Open positions are held at cost until their market resolves.</div>
+  </section>
+
+  <section class="card">
+    <h2>Trades</h2>
+    <div class="tabs" id="tabs"></div>
+    <div class="tabs" id="views">
+      <button data-view="recent" aria-pressed="true">Recent activity</button>
+      <button data-view="open" aria-pressed="false">Open positions &amp; bids</button>
+    </div>
+    <div class="scroll" id="table"></div>
+  </section>
+</main>
+<script>
+const COLORS = ["var(--series-1)", "var(--series-2)"];
+const LABELS = { through: "Conservative fills", touch: "Optimistic fills" };
+let data = null, activeRun = null, view = "recent";
+
+const $ = (id) => document.getElementById(id);
+const money = (v, sign) => v == null ? "–" : (sign && v > 0 ? "+" : v < 0 ? "−" : "") + "$" + Math.abs(v).toFixed(2);
+const cls = (v) => v > 0 ? "pos" : v < 0 ? "neg" : "";
+const label = (n) => LABELS[n] || n;
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmtTime = (t) => new Date(t * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+function colorFor(name) {
+  const i = data.runs.findIndex((r) => r.name === name);
+  return COLORS[i] || "var(--text-muted)";
+}
+
+function renderRuns() {
+  $("runs").innerHTML = data.runs.map((r) => {
+    if (r.error) return `<div class="card"><div class="run-title">${esc(label(r.name))}</div><div class="sub">Reading state…</div></div>`;
+    const ret = r.start_cash ? (r.equity - r.start_cash) / r.start_cash * 100 : 0;
+    const hrs = (data.now - r.started) / 3600;
+    const winRate = r.settled ? (100 * r.wins / r.settled).toFixed(1) + "%" : "–";
+    return `<div class="card">
+      <div class="run-title"><span class="swatch" style="background:${colorFor(r.name)}"></span>${esc(label(r.name))}
+        <span class="badge">${esc(r.name)}</span></div>
+      <div class="sub">Running ${hrs < 48 ? hrs.toFixed(1) + " h" : (hrs / 24).toFixed(1) + " days"} · started with ${money(r.start_cash)}</div>
+      <div class="hero ${cls(r.realised)}">${money(r.realised, true)}</div>
+      <div class="sub">realised P&amp;L · equity ${money(r.equity)} (${ret >= 0 ? "+" : ""}${ret.toFixed(2)}%)</div>
+      <div class="stats">
+        <div class="stat"><div class="k">Settled</div><div class="v">${r.settled}</div></div>
+        <div class="stat"><div class="k">Won / lost</div><div class="v">${r.wins} / ${r.losses}</div></div>
+        <div class="stat"><div class="k">Win rate</div><div class="v">${winRate}</div></div>
+        <div class="stat"><div class="k">Cash free</div><div class="v">${money(r.cash)}</div></div>
+        <div class="stat"><div class="k">In positions</div><div class="v">${money(r.in_positions)}</div></div>
+        <div class="stat"><div class="k">Fees paid</div><div class="v">${money(r.fees)}</div></div>
+        <div class="stat"><div class="k">Open / bids</div><div class="v">${r.positions.length} / ${r.orders.length}</div></div>
+        <div class="stat"><div class="k">Worst trade</div><div class="v ${cls(r.worst)}">${money(r.worst, true)}</div></div>
+        <div class="stat"><div class="k">Last update</div><div class="v">${Math.round(data.now - r.updated)}s ago</div></div>
+      </div></div>`;
+  }).join("") || `<div class="card empty">No runs yet. Start <code>paper_bot.py --name through</code>.</div>`;
+}
+
+let chartGeom = null;
+function renderChart() {
+  const runs = data.runs.filter((r) => !r.error);
+  const svg = $("chart");
+  const W = Math.max(300, Math.round($("chartWrap").clientWidth)), narrow = W < 640;
+  const H = narrow ? 230 : 300, m = { l: 62, r: narrow ? 72 : 185, t: 12, b: 28 };
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  $("legend").innerHTML = runs.length > 1 ? runs.map((r) =>
+    `<span><span class="swatch" style="background:${colorFor(r.name)}"></span>${esc(label(r.name))}</span>`).join("") : "";
+  const series = runs.map((r) => ({ name: r.name, pts: [[r.started, 0], ...r.curve.map((c) => [c[0], c[1]])] }));
+  const all = series.flatMap((s) => s.pts);
+  if (all.length < 2 || series.every((s) => s.pts.length < 2)) {
+    svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="var(--text-muted)" font-size="15">No settled trades yet</text>`;
+    chartGeom = null; return;
+  }
+  const t0 = Math.min(...all.map((p) => p[0])), t1 = Math.max(data.now, ...all.map((p) => p[0]));
+  let y0 = Math.min(0, ...all.map((p) => p[1])), y1 = Math.max(0, ...all.map((p) => p[1]));
+  const pad = (y1 - y0) * 0.1 || 1; y0 -= pad; y1 += pad;
+  const x = (t) => m.l + (t - t0) / (t1 - t0 || 1) * (W - m.l - m.r);
+  const y = (v) => m.t + (y1 - v) / (y1 - y0) * (H - m.t - m.b);
+  const ticks = niceTicks(y0, y1, 5);
+  let g = ticks.map((v) => `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)" stroke-width="1"/>
+    <text x="${m.l - 8}" y="${y(v) + 4}" text-anchor="end" fill="var(--text-muted)" font-size="12">${money(v, true)}</text>`).join("");
+  g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(0)}" y2="${y(0)}" stroke="var(--axis)" stroke-width="1"/>`;
+  const nx = narrow ? 1 : 4;
+  for (let i = 0; i <= nx; i++) {
+    const t = t0 + (t1 - t0) * i / nx;
+    g += `<text x="${x(t)}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === nx ? "end" : "middle"}" fill="var(--text-muted)" font-size="12">${narrow ? new Date(t * 1000).toLocaleDateString([], { month: "short", day: "numeric" }) : fmtTime(t)}</text>`;
+  }
+  const endLabels = [];
+  series.forEach((s) => {
+    const pts = [...s.pts, [t1, s.pts[s.pts.length - 1][1]]];
+    // step line: P&L only changes at settlements
+    let d = `M${x(pts[0][0])},${y(pts[0][1])}`;
+    for (let i = 1; i < pts.length; i++) d += ` H${x(pts[i][0])} V${y(pts[i][1])}`;
+    g += `<path d="${d}" fill="none" stroke="${colorFor(s.name)}" stroke-width="2" stroke-linejoin="round"/>`;
+    const last = pts[pts.length - 1];
+    endLabels.push({ x: x(last[0]) + 8, y: y(last[1]) + 4, text: `${narrow ? "" : esc(label(s.name)) + " "}${money(last[1], true)}` });
+  });
+  // Keep end labels at least 14px apart so they never overlap.
+  endLabels.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < endLabels.length; i++) endLabels[i].y = Math.max(endLabels[i].y, endLabels[i - 1].y + 14);
+  g += endLabels.map((l) => `<text x="${l.x}" y="${l.y}" fill="var(--text-secondary)" font-size="12">${l.text}</text>`).join("");
+  g += `<line id="xhair" y1="${m.t}" y2="${H - m.b}" stroke="var(--axis)" stroke-width="1" visibility="hidden"/>`;
+  g += series.map((s, i) => `<circle id="dot${i}" r="4" fill="${colorFor(s.name)}" stroke="var(--surface-1)" stroke-width="2" visibility="hidden"/>`).join("");
+  g += `<rect x="${m.l}" y="${m.t}" width="${W - m.l - m.r}" height="${H - m.t - m.b}" fill="transparent" id="hit"/>`;
+  svg.innerHTML = g;
+  chartGeom = { series, x, y, t0, t1, m, W };
+  const hit = $("hit");
+  hit.addEventListener("pointermove", onHover);
+  hit.addEventListener("pointerdown", onHover);  // tap to inspect on phones
+  hit.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "touch") return; $("tip").style.display = "none"; $("xhair").setAttribute("visibility", "hidden");
+    series.forEach((_, i) => $("dot" + i).setAttribute("visibility", "hidden")); });
+}
+
+function onHover(ev) {
+  const { series, x, y, t0, t1, m, W } = chartGeom;
+  const svg = $("chart"), rect = svg.getBoundingClientRect();
+  const sx = (ev.clientX - rect.left) * (W / rect.width);
+  const t = t0 + (sx - m.l) / (W - m.l - m.r) * (t1 - t0);
+  $("xhair").setAttribute("x1", sx); $("xhair").setAttribute("x2", sx); $("xhair").setAttribute("visibility", "visible");
+  let rows = "";
+  series.forEach((s, i) => {
+    let v = 0; for (const p of s.pts) { if (p[0] <= t) v = p[1]; else break; }
+    const dot = $("dot" + i); dot.setAttribute("cx", sx); dot.setAttribute("cy", y(v)); dot.setAttribute("visibility", "visible");
+    rows += `<div class="row"><span><span class="swatch" style="background:${colorFor(s.name)}"></span> ${esc(label(s.name))}</span><b class="${cls(v)}">${money(v, true)}</b></div>`;
+  });
+  const tip = $("tip"), wrap = $("chartWrap").getBoundingClientRect();
+  tip.innerHTML = `<div class="sub" style="margin-bottom:4px">${fmtTime(t)}</div>${rows}`;
+  tip.style.display = "block";
+  const px = ev.clientX - wrap.left;
+  let left = px + 12;
+  if (left + tip.offsetWidth > wrap.width) left = px - tip.offsetWidth - 12;
+  tip.style.left = Math.max(0, Math.min(left, wrap.width - tip.offsetWidth)) + "px";
+  tip.style.top = "8px";
+}
+
+function niceTicks(a, b, n) {
+  const step0 = (b - a) / n, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((s) => s >= step0);
+  const out = []; for (let v = Math.ceil(a / step) * step; v <= b + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+
+function renderTabs() {
+  const names = data.runs.filter((r) => !r.error).map((r) => r.name);
+  if (!activeRun || !names.includes(activeRun)) activeRun = names[0];
+  $("tabs").innerHTML = names.length > 1 ? names.map((n) =>
+    `<button data-run="${esc(n)}" aria-pressed="${n === activeRun}">${esc(label(n))}</button>`).join("") : "";
+}
+
+function renderTable() {
+  const r = data.runs.find((x) => x.name === activeRun);
+  if (!r) { $("table").innerHTML = `<div class="empty">No data yet</div>`; return; }
+  if (view === "recent") {
+    if (!r.recent.length) { $("table").innerHTML = `<div class="empty">No activity yet</div>`; return; }
+    $("table").innerHTML = `<table><thead><tr><th>Time (UTC)</th><th>Event</th><th>Side</th><th class="num">Qty</th>
+      <th class="num">Price</th><th class="num">P&amp;L</th><th>Market</th></tr></thead><tbody>${r.recent.map((e) => {
+        const pnl = e.pnl ? parseFloat(e.pnl) : null;
+        const ev = e.event === "SETTLE" ? (pnl > 0 ? "✓ Won" : "✕ Lost") : e.event === "FILL" ? "Filled" : esc(e.event);
+        return `<tr><td>${esc(e.time)}</td><td class="${e.event === "SETTLE" ? cls(pnl) : ""}">${ev}</td><td>${esc((e.side || "").toUpperCase())}</td>
+          <td class="num">${esc(e.contracts)}</td><td class="num">${e.price ? (parseFloat(e.price) * 100).toFixed(0) + "¢" : ""}</td>
+          <td class="num ${cls(pnl)}">${pnl == null ? "" : money(pnl, true)}</td><td class="title">${esc(e.title || e.ticker)}</td></tr>`;
+      }).join("")}</tbody></table>`;
+  } else {
+    const rows = [...r.positions.map((p) => ({ kind: "Position", side: p.side, n: p.contracts, px: p.cost / p.contracts, cost: p.cost, title: p.title, t: p.opened })),
+                  ...r.orders.map((o) => ({ kind: "Bid", side: o.side, n: o.remaining, px: o.price, cost: o.reserved, title: o.title, t: o.placed }))];
+    if (!rows.length) { $("table").innerHTML = `<div class="empty">Nothing open right now</div>`; return; }
+    $("table").innerHTML = `<table><thead><tr><th>Type</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th>
+      <th class="num">At risk</th><th class="num">Opened</th><th>Market</th></tr></thead><tbody>${rows.map((x) => `<tr><td>${x.kind}</td>
+      <td>${esc(x.side.toUpperCase())}</td><td class="num">${x.n}</td><td class="num">${(x.px * 100).toFixed(1)}¢</td>
+      <td class="num">${money(x.cost)}</td><td class="num">${fmtTime(x.t)}</td><td class="title">${esc(x.title)}</td></tr>`).join("")}</tbody></table>`;
+  }
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.run) { activeRun = b.dataset.run; renderTabs(); renderTable(); }
+  if (b.dataset.view) { view = b.dataset.view; document.querySelectorAll("#views button").forEach((x) => x.setAttribute("aria-pressed", x === b)); renderTable(); }
+});
+
+async function refresh() {
+  try {
+    const res = await fetch("api/runs", { cache: "no-store" });
+    data = await res.json();
+    renderRuns(); renderChart(); renderTabs(); renderTable();
+    $("updated").textContent = "Updated " + new Date().toLocaleTimeString() + " · refreshes every 15s";
+  } catch (e) {
+    $("updated").textContent = "Can't reach the dashboard server. Is dashboard.py running?";
+  }
+}
+refresh();
+setInterval(refresh, 15000);
+let resizeTimer; window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => data && renderChart(), 150); });
+</script>
+</body>
+</html>

@@ -5,3 +5,5 @@ __pycache__/
 research_cache.jsonl
 paper_state_*.json
 paper_trades_*.csv
+archive_*
+logs/

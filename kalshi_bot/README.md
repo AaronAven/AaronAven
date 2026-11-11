@@ -15,7 +15,7 @@ the earlier and later halves of the data. Full output is in `research_results_20
 |---|---|
 | **Taker** (buy at the ask), any band 50–99¢, any time window | **−1% to −3%**, consistently negative |
 | Maker (resting bid) 85–95¢ | about 0%, noise |
-| **Maker 95–99¢, resolving within 1h, $10 orders** | **+1.0% to +1.5% (±1%)**, positive in both halves |
+| **Maker 95–99¢, resolving within 1h, $10–50 orders** | **+1.0% to +1.5% (±1%)**, positive in both halves |
 
 Neighbouring settings (93–99¢, 96–99¢, under 30 minutes) were also positive, which suggests this isn't
 a single lucky slice. It's still only two weeks of data, and about 60 combinations were tested, so some
@@ -33,10 +33,34 @@ Why maker orders and $10 sizes:
 - At 97¢ a win pays 3¢ and a loss costs 97¢, so one loss cancels about 32 wins. Expect long winning
   streaks broken by sudden drops.
 - Related markets can lose together, e.g. several crypto 15-minute markets in one sharp move.
-- On $100 with $10 orders, a +1% edge is about 10¢ per filled order. Even if it holds, that's maybe a
-  few dollars a week, depending on fill rates.
+- Defaults: $500 bankroll, $20 per order (4% of bankroll), up to 25 orders/positions open at once.
+  A +1% edge is about 20¢ per filled order. A single loss at 97¢ costs about $19.40.
+  Even if the edge holds, expect roughly tens of dollars a month at most, depending on fill rates.
 
-## Run it
+## Quick start on a Mac (bots + dashboard)
+
+```bash
+cd kalshi_bot
+chmod +x run_all.sh
+./run_all.sh --reset      # first time: both runs start fresh with $500 each
+./run_all.sh              # later: continue where they left off
+```
+
+This starts both paper runs and the dashboard at http://127.0.0.1:8787, and keeps the Mac awake.
+
+### Follow along from your phone with Tailscale
+
+1. Install Tailscale on the Mac and your phone, signed into the same account.
+2. On the Mac, run `tailscale serve --bg 8787`. If you use the App Store version and `tailscale` isn't on
+   your PATH, run `/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg 8787` instead.
+   The first time, it may ask you to enable HTTPS certificates for your tailnet; follow the link it prints.
+3. Open the `https://<your-mac>.<tailnet>.ts.net` address it prints on your phone.
+
+Only devices on your tailnet can open it. The dashboard is read-only and binds to 127.0.0.1. Don't use
+`tailscale funnel`, which would put it on the public internet. To stop sharing:
+`tailscale serve --https=443 off`.
+
+## Run it manually
 
 Requires Python 3.9+ and no other packages.
 
