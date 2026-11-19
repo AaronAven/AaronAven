@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Start both paper runs and the dashboard, keep the Mac awake, stop everything on Ctrl-C.
+# Start the BTC 15-minute paper bot and the dashboard, keep the Mac awake, stop everything on Ctrl-C.
 #   ./run_all.sh            continue existing runs
-#   ./run_all.sh --reset    start both runs fresh at $500
+#   ./run_all.sh --reset    start fresh with the $1,000 paper bankroll
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p logs
@@ -13,8 +13,8 @@ stopped=""
 cleanup() { [[ -n "$stopped" ]] && return; stopped=1; echo; echo "Stopping..."; kill -TERM "${pids[@]}" 2>/dev/null || true; wait 2>/dev/null || true; }
 trap cleanup INT TERM EXIT
 
-python3 -u paper_bot.py --name through $RESET --report-every 900 >> logs/through.log 2>&1 & pids+=($!)
-python3 -u paper_bot.py --name touch --fill-rule touch --max-rps 5 $RESET --report-every 900 >> logs/touch.log 2>&1 & pids+=($!)
+python3 -u btc15_bot.py --name btc15 $RESET >> logs/btc15.log 2>&1 & pids+=($!)
+python3 -u btc15_bot.py --name btc15_late --entry-start 60 --entry-end 3 --min-price 0.90 --max-price 0.99 $RESET >> logs/btc15_late.log 2>&1 & pids+=($!)
 python3 -u dashboard.py >> logs/dashboard.log 2>&1 & pids+=($!)
 
 # keep the Mac from sleeping while this script runs (macOS only)

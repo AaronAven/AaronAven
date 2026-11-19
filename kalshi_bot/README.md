@@ -1,4 +1,52 @@
-# Kalshi near-expiry favourites bot (paper trading)
+# Kalshi BTC 15-minute bot (paper trading)
+
+**Current strategy (Nov 19, 2026):** bet on Kalshi's "BTC price up in next 15 mins?" markets (series
+`KXBTC15M`). Late in each 15-minute window, buy the side the market favours (UP or DOWN), $50 per trade,
+starting from a $1,000 paper bankroll. Each market settles on the average BTC price (CF Benchmarks BRTI)
+over the final 60 seconds versus the same average at the start of the window. Paper only: no real money.
+
+Two versions run side by side:
+
+| run | enters | price range | why |
+|---|---|---|---|
+| `btc15` (research) | 3:00-2:00 before close | 92-98c | the only zone positive in both halves of the backtest |
+| `btc15_late` | last 60s, down to 3s before close | 90-99c | "as late as possible": the original idea, for comparison |
+
+### What the backtest says (`btc_research.py`, 664 markets, Nov 12-19, 2026)
+
+Full output: `btc_research_results_2026-11-19.txt`. Simulated one $50 buy per market at real traded
+prices, net of Kalshi fees, with separate results for the first and second half of the week.
+
+- Buying later raises the win rate, but the price rises to match, so profit doesn't improve.
+- **1:00-0:30 before close lost money at every price level** (−0.8% to −10% per trade).
+- **3:00-2:00 before close at 92-98c was +1.6% to +2.6% per trade.** That's the best result, but the
+  2:00-1:00 window next to it was negative, so it may be noise.
+- The last 10 seconds looked very profitable, but only about 10 of 664 markets had a qualifying trade
+  there. That's too few to conclude anything, and in practice faster bots take those prices.
+- A loss costs about $48-49, while a win at 96c pays about $2. One loss wipes out roughly 20-25 wins.
+- Only one week of data. Re-run before trusting it: `python3 btc_research.py fetch --days 14 && python3 btc_research.py analyze`.
+
+### Run it
+
+```bash
+cd kalshi_bot
+./run_all.sh --reset       # first time: both BTC runs start at $1,000, plus the dashboard
+./run_all.sh               # later: continue
+```
+
+The dashboard (http://127.0.0.1:8787, or via `tailscale serve --bg 8787`) shows a live panel with the
+current market, target price, countdown, UP/DOWN prices and what each bot is doing, plus P&L and trades.
+
+Paper fills walk the live order book when the bot decides. A real order arrives a few hundred
+milliseconds later, and in the final minute prices move quickly, so real fills could be worse,
+especially for `btc15_late`.
+
+---
+
+## Previous strategy (archived): near-expiry favourites across all markets
+
+Old run files are in `archive/`. The notes below describe that earlier strategy.
+
 
 The bot posts small resting buy orders on the heavily-favoured side (95–99¢) of Kalshi markets that
 resolve within the next hour, holds each one to settlement, and recycles the cash. **Paper trading only.**

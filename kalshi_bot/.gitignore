@@ -7,3 +7,6 @@ paper_state_*.json
 paper_trades_*.csv
 archive_*
 logs/
+btc_research_cache.jsonl
+archive/
+live_status_*.json

@@ -65,6 +65,7 @@ def summarize(name):
         "orders": orders,
         "curve": curve,
         "recent": list(reversed(read_csv_tail(os.path.join(HERE, f"paper_trades_{name}.csv"), 60))),
+        "strategy": st.get("strategy", ""),
         "updated": os.path.getmtime(os.path.join(HERE, f"paper_state_{name}.json")),
     }
 
@@ -89,7 +90,15 @@ class Handler(BaseHTTPRequestHandler):
                     runs.append(summarize(n))
                 except (OSError, ValueError, KeyError) as e:  # state mid-write or malformed: skip this poll
                     runs.append({"name": n, "error": str(e)})
-            return self._send(200, json.dumps({"now": time.time(), "runs": runs}).encode(), "application/json")
+            live = {}
+            for path in glob.glob(os.path.join(HERE, "live_status_*.json")):
+                try:
+                    with open(path) as fh:
+                        live[os.path.basename(path)[len("live_status_"):-len(".json")]] = json.load(fh)
+                except (OSError, ValueError):
+                    pass
+            return self._send(200, json.dumps({"now": time.time(), "runs": runs, "live": live}).encode(),
+                              "application/json")
         self._send(404, b"not found", "text/plain")
 
     def log_message(self, *args):  # keep the terminal quiet

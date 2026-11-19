@@ -67,10 +67,15 @@ td.title { white-space: normal; min-width: 220px; color: var(--text-secondary); 
   <header>
     <div>
       <h1>Kalshi paper bot</h1>
-      <div class="sub">Paper trading. Maker bids at 95–99¢ on markets resolving within 1 hour.</div>
+      <div class="sub" id="strategy">Paper trading.</div>
     </div>
     <div class="sub" id="updated">Loading…</div>
   </header>
+
+  <section class="card" id="liveCard" hidden>
+    <h2>Live market</h2>
+    <div id="live"></div>
+  </section>
 
   <div class="runs" id="runs"></div>
 
@@ -96,7 +101,8 @@ td.title { white-space: normal; min-width: 220px; color: var(--text-secondary); 
 </main>
 <script>
 const COLORS = ["var(--series-1)", "var(--series-2)"];
-const LABELS = { through: "Conservative fills", touch: "Optimistic fills" };
+const LABELS = { btc15: "BTC: 3–2 min left (research)", btc15_late: "BTC: last minute (as late as possible)",
+                 through: "Conservative fills", touch: "Optimistic fills" };
 let data = null, activeRun = null, view = "recent";
 
 const $ = (id) => document.getElementById(id);
@@ -111,6 +117,40 @@ function colorFor(name) {
   return COLORS[i] || "var(--text-muted)";
 }
 
+function renderLive() {
+  const entries = Object.entries(data.live || {});
+  const first = data.runs.find((r) => r.strategy);
+  $("strategy").textContent = "Paper trading on Kalshi's BTC 15-minute up/down markets. No real money.";
+  if (!entries.length) { $("liveCard").hidden = true; return; }
+  $("liveCard").hidden = false;
+  const fresh = entries.filter(([, s]) => data.now - s.time <= 120 && s.state === "running");
+  const stale = entries.filter(([, s]) => !(data.now - s.time <= 120 && s.state === "running"));
+  const cents = (v) => v == null || isNaN(v) ? "–" : Math.round(v * 100) + "¢";
+  let html = "";
+  if (fresh.length) {
+    const s = fresh.sort((a, b) => b[1].time - a[1].time)[0][1];
+    const left = Math.max(0, s.close - Date.now() / 1000);
+    const mm = Math.floor(left / 60), ss = Math.floor(left % 60).toString().padStart(2, "0");
+    const up = s.yes_ask, down = s.yes_bid ? 1 - s.yes_bid : null;
+    const fav = up != null && up >= 0.5 ? "UP" : "DOWN";
+    html += `<div class="stats" style="grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); margin-top:0">
+      <div class="stat"><div class="k">Market</div><div class="v">${esc(s.ticker.replace("KXBTC15M-", ""))}</div></div>
+      <div class="stat"><div class="k">Target (BTC avg)</div><div class="v">$${Number(s.target).toLocaleString(undefined, { minimumFractionDigits: 2 })}</div></div>
+      <div class="stat"><div class="k">Time left</div><div class="v live-left" data-close="${s.close}">${mm}:${ss}</div></div>
+      <div class="stat"><div class="k">Buy UP (YES)</div><div class="v">${cents(up)}</div></div>
+      <div class="stat"><div class="k">Buy DOWN (NO)</div><div class="v">${cents(down)}</div></div>
+      <div class="stat"><div class="k">Market favours</div><div class="v">${fav}</div></div>
+    </div>`;
+    html += fresh.map(([name, b]) => `<div class="note"><span class="swatch" style="background:${colorFor(name)}"></span> ${esc(label(name))}: ${esc(b.note || "")}</div>`).join("");
+  }
+  html += stale.map(([name, b]) => `<div class="note">${esc(label(name))}: not reporting (last update ${Math.round((data.now - b.time) / 60)} min ago). Is it running?</div>`).join("");
+  $("live").innerHTML = html;
+}
+setInterval(() => document.querySelectorAll(".live-left").forEach((el) => {
+  const left = Math.max(0, +el.dataset.close - Date.now() / 1000);
+  el.textContent = Math.floor(left / 60) + ":" + Math.floor(left % 60).toString().padStart(2, "0");
+}), 1000);
+
 function renderRuns() {
   $("runs").innerHTML = data.runs.map((r) => {
     if (r.error) return `<div class="card"><div class="run-title">${esc(label(r.name))}</div><div class="sub">Reading state…</div></div>`;
@@ -120,6 +160,7 @@ function renderRuns() {
     return `<div class="card">
       <div class="run-title"><span class="swatch" style="background:${colorFor(r.name)}"></span>${esc(label(r.name))}
         <span class="badge">${esc(r.name)}</span></div>
+      <div class="sub">${esc(r.strategy || "")}</div>
       <div class="sub">Running ${hrs < 48 ? hrs.toFixed(1) + " h" : (hrs / 24).toFixed(1) + " days"} · started with ${money(r.start_cash)}</div>
       <div class="hero ${cls(r.realised)}">${money(r.realised, true)}</div>
       <div class="sub">realised P&amp;L · equity ${money(r.equity)} (${ret >= 0 ? "+" : ""}${ret.toFixed(2)}%)</div>
@@ -262,14 +303,14 @@ async function refresh() {
   try {
     const res = await fetch("api/runs", { cache: "no-store" });
     data = await res.json();
-    renderRuns(); renderChart(); renderTabs(); renderTable();
-    $("updated").textContent = "Updated " + new Date().toLocaleTimeString() + " · refreshes every 15s";
+    renderLive(); renderRuns(); renderChart(); renderTabs(); renderTable();
+    $("updated").textContent = "Updated " + new Date().toLocaleTimeString() + " · refreshes every 5s";
   } catch (e) {
     $("updated").textContent = "Can't reach the dashboard server. Is dashboard.py running?";
   }
 }
 refresh();
-setInterval(refresh, 15000);
+setInterval(refresh, 5000);
 let resizeTimer; window.addEventListener("resize", () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => data && renderChart(), 150); });
 </script>
 </body>
