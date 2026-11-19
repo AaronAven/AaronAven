@@ -5,9 +5,9 @@ be at or above its average over the 60 seconds before the window opened. This bo
 the window, then buys the favoured side (YES = up, NO = down) at the real order-book ask, if that ask is
 inside the price band. One $50 buy per market, held to settlement. Paper only: no account or keys.
 
-    python3 btc15_bot.py                 # research version: 3:00-2:00 left, 92-98c, $50, $1,000 bankroll
-    python3 btc15_bot.py --name btc15_late --entry-start 60 --entry-end 3 --min-price 0.90 --max-price 0.99
-                                         # "as late as possible" version, for comparison
+    python3 btc15_bot.py                 # minute-12 rule: at 3:00 left bet $50 on the trend, $1,000 bankroll
+    python3 btc15_bot.py --name btc15_strong --min-price 0.92
+                                         # same, but only when the trend is strong (favourite >= 92c)
     python3 btc15_bot.py --report        # summary
     python3 btc15_bot.py --reset         # start over
 
@@ -99,8 +99,10 @@ class Bot:
 
     def describe(self):
         a = self.a
-        return (f"BTC 15-min late favourite: buy the favoured side between {a.entry_start}s and {a.entry_end}s "
-                f"before close when its ask is {a.min_price:.2f}-{a.max_price:.2f}; ${a.stake:.0f} per trade")
+        mark = 15 - a.entry_start / 60
+        trend = "any trend" if a.min_price <= 0.5 else f"only if the favourite costs {a.min_price * 100:.0f}c or more"
+        return (f"At the {mark:g}:00 mark ({a.entry_start / 60:g} min left), bet ${a.stake:.0f} on the way BTC is "
+                f"trending (UP if above the start price, else DOWN); {trend}")
 
     def save(self):
         self.st["done"] = sorted(self.done)[-500:]
@@ -161,9 +163,9 @@ class Bot:
         side = max(cands, key=lambda s: best[s])
         ask = best[side]
         if ask < a.min_price:
-            return f"favourite {side.upper()} at {ask:.2f}, below {a.min_price:.2f}: too uncertain, waiting"
+            return f"trend {('UP' if side == 'yes' else 'DOWN')} but weak ({ask * 100:.0f}c < {a.min_price * 100:.0f}c): no bet unless it firms up"
         if ask > a.max_price:
-            return f"favourite {side.upper()} at {ask:.2f}, above {a.max_price:.2f}: too little profit, waiting"
+            return f"trend {('UP' if side == 'yes' else 'DOWN')} at {ask * 100:.0f}c, above {a.max_price * 100:.0f}c cap: skipping"
         stake = min(a.stake, self.st["cash"])
         n, avg = walk(asks_from_book(book, side), stake, a.max_price)
         if n < 1:
@@ -210,7 +212,8 @@ class Bot:
             close = ts(m["close_time"]); left = close - now
             note = ""
             if m["ticker"] in self.done:
-                note = "already traded this window"
+                note = ("bet placed this window, waiting for settlement" if m["ticker"] in self.st["positions"]
+                        else "no bet this window (trend too weak); waiting for the next one")
             elif a.entry_end <= left <= a.entry_start:
                 try:
                     note = self.try_enter(m, left)
@@ -220,7 +223,7 @@ class Bot:
                     self.done.add(m["ticker"])  # window passed without a qualifying price: skip it
                     self.save()
             elif left > a.entry_start:
-                note = f"waiting for the last {a.entry_start}s"
+                note = f"waiting for the {15 - a.entry_start / 60:g}:00 mark"
             try:  # fresh prices for the dashboard
                 mm = self.c.market(m["ticker"])
             except Exception:
@@ -253,10 +256,10 @@ def main():
     ap.add_argument("--name", default="btc15")
     ap.add_argument("--bankroll", type=float, default=1000.0)
     ap.add_argument("--stake", type=float, default=50.0)
-    ap.add_argument("--entry-start", type=float, default=180.0, help="start looking N seconds before close")
-    ap.add_argument("--entry-end", type=float, default=120.0, help="stop looking N seconds before close")
-    ap.add_argument("--min-price", type=float, default=0.92, help="only buy if the favourite costs at least this")
-    ap.add_argument("--max-price", type=float, default=0.98, help="never pay more than this")
+    ap.add_argument("--entry-start", type=float, default=180.0, help="bet at this many seconds before close (180 = the 12:00 mark)")
+    ap.add_argument("--entry-end", type=float, default=165.0, help="give up if no bet placed by N seconds before close")
+    ap.add_argument("--min-price", type=float, default=0.50, help="only bet if the favourite costs at least this (0.50 = any trend)")
+    ap.add_argument("--max-price", type=float, default=0.99, help="never pay more than this")
     ap.add_argument("--poll", type=float, default=1.0, help="seconds between checks inside the entry window")
     ap.add_argument("--max-rps", type=float, default=8.0)
     ap.add_argument("--report-every", type=float, default=1800.0)

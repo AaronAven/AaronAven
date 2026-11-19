@@ -1,30 +1,38 @@
 # Kalshi BTC 15-minute bot (paper trading)
 
-**Current strategy (Nov 19, 2026):** bet on Kalshi's "BTC price up in next 15 mins?" markets (series
-`KXBTC15M`). Late in each 15-minute window, buy the side the market favours (UP or DOWN), $50 per trade,
-starting from a $1,000 paper bankroll. Each market settles on the average BTC price (CF Benchmarks BRTI)
-over the final 60 seconds versus the same average at the start of the window. Paper only: no real money.
+**Current strategy (Nov 19, 2026), the "minute 12" rule:** on Kalshi's "BTC price up in next 15 mins?"
+markets (series `KXBTC15M`), wait until the 12:00 mark of each 15-minute window (3 minutes left). If
+BTC is trending up (above the window's start price, so the market prices UP above 50c), bet UP;
+otherwise bet DOWN. $50 per bet, $1,000 paper bankroll, held to settlement. Each market settles on the
+average BTC price (CF Benchmarks BRTI) over the final 60 seconds versus the same average at the start.
+Paper only: no real money.
 
 Two versions run side by side:
 
-| run | enters | price range | why |
+| run | rule |
+|---|---|
+| `btc15` | minute 12, follow the trend, any strength |
+| `btc15_strong` | minute 12, follow the trend only when the favourite costs 92c or more (strong trend) |
+
+### What the backtest says (`btc_minute12.py`, 664 markets, Nov 12-19, 2026)
+
+Full output: `btc_minute12_results_2026-11-19.txt`.
+
+| favourite's price at 12:00 | bets | win rate | result on $50 bets |
 |---|---|---|---|
-| `btc15` (research) | 3:00-2:00 before close | 92-98c | the only zone positive in both halves of the backtest |
-| `btc15_late` | last 60s, down to 3s before close | 90-99c | "as late as possible": the original idea, for comparison |
+| 50-70c (weak trend) | 94 | 56% | −$339 |
+| 70-85c | 103 | 76% | −$226 |
+| 85-92c | 86 | 90% | about $0 |
+| 92-96c | 70 | 100% | +$208 |
+| 96-99c | 311 | 99% | +$70 |
+| **all (the plain rule)** | 664 | 88% | **−$287** (bankroll low point $531) |
 
-### What the backtest says (`btc_research.py`, 664 markets, Nov 12-19, 2026)
-
-Full output: `btc_research_results_2026-11-19.txt`. Simulated one $50 buy per market at real traded
-prices, net of Kalshi fees, with separate results for the first and second half of the week.
-
-- Buying later raises the win rate, but the price rises to match, so profit doesn't improve.
-- **1:00-0:30 before close lost money at every price level** (−0.8% to −10% per trade).
-- **3:00-2:00 before close at 92-98c was +1.6% to +2.6% per trade.** That's the best result, but the
-  2:00-1:00 window next to it was negative, so it may be noise.
-- The last 10 seconds looked very profitable, but only about 10 of 664 markets had a qualifying trade
-  there. That's too few to conclude anything, and in practice faster bots take those prices.
-- A loss costs about $48-49, while a win at 96c pays about $2. One loss wipes out roughly 20-25 wins.
-- Only one week of data. Re-run before trusting it: `python3 btc_research.py fetch --days 14 && python3 btc_research.py analyze`.
+- Following the trend at minute 12 is right most of the time, but weak trends reverse often enough,
+  at prices that pay too little, to lose money overall.
+- Strong trends (92c+) were profitable last week. 70 wins in a row at 92-96c is partly luck, though.
+  A loss costs about $48, so a 2-3% loss rate would erase that profit.
+- One week of data. Re-run with fresh data: `python3 btc_research.py fetch --days 14 && python3 btc_minute12.py`.
+  `btc_research.py analyze` tests other entry times and price bands.
 
 ### Run it
 

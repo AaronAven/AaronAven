@@ -1,0 +1,15 @@
+664 markets in cache; 664 had a trade at the 12:00 mark. $50 per bet, after fees.
+
+                        bets     win%  avg $/bet          total $   worst $
+all                      664    88.4%     -0.43 ±1.56    -287.04    -51.70
+first half of week       332    88.3%     -1.09 ±2.16    -361.05    -51.70
+second half of week      332    88.6%     +0.22 ±2.24     +74.00    -51.46
+
+by the favourite's price at 12:00:
+50-70c                    94    56.4%     -3.60 ±8.58    -338.59    -51.70
+70-85c                   103    75.7%     -2.19 ±5.32    -225.73    -50.71
+85-92c                    86    89.5%     -0.00 ±3.66      -0.39    -50.37
+92-96c                    70   100.0%     +2.97 ±0.14    +207.72     +1.98
+96-99c                   311    99.4%     +0.22 ±0.45     +69.95    -49.49
+
+$1,000 bankroll path: ends $712.96, lowest $530.83, biggest drop from a high $569.00

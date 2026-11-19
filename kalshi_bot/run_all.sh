@@ -14,7 +14,7 @@ cleanup() { [[ -n "$stopped" ]] && return; stopped=1; echo; echo "Stopping..."; 
 trap cleanup INT TERM EXIT
 
 python3 -u btc15_bot.py --name btc15 $RESET >> logs/btc15.log 2>&1 & pids+=($!)
-python3 -u btc15_bot.py --name btc15_late --entry-start 60 --entry-end 3 --min-price 0.90 --max-price 0.99 $RESET >> logs/btc15_late.log 2>&1 & pids+=($!)
+python3 -u btc15_bot.py --name btc15_strong --min-price 0.92 $RESET >> logs/btc15_strong.log 2>&1 & pids+=($!)
 python3 -u dashboard.py >> logs/dashboard.log 2>&1 & pids+=($!)
 
 # keep the Mac from sleeping while this script runs (macOS only)
