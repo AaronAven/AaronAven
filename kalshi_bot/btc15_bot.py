@@ -28,14 +28,29 @@ from kalshi import Client, TAKER_RATE, f, fee
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERIES = "KXBTC15M"
-STATE = LOG = STATUS = None
+STATE = LOG = STATUS = JOURNAL = None
+MODE = "PAPER"  # this bot has no live mode
+JOURNAL_FIELDS = ["trade_id", "strategy", "mode", "market", "side", "entry_time", "entry_price", "size", "stop",
+                  "target", "exit_time", "exit_price", "fees", "funding", "slippage", "pnl", "r_multiple",
+                  "reason_in", "reason_out", "regime", "backtest_expected_r", "notes"]
 
 
 def set_paths(name):
-    global STATE, LOG, STATUS
+    global STATE, LOG, STATUS, JOURNAL
     STATE = os.path.join(HERE, f"paper_state_{name}.json")
     LOG = os.path.join(HERE, f"paper_trades_{name}.csv")
     STATUS = os.path.join(HERE, f"live_status_{name}.json")
+    JOURNAL = os.path.join(HERE, f"trades_{name}.csv")
+
+
+def journal(row):
+    """Trade journal in the fund playbook's format (fund/playbook.md, learning loop)."""
+    new = not os.path.exists(JOURNAL)
+    with open(JOURNAL, "a", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=JOURNAL_FIELDS)
+        if new:
+            w.writeheader()
+        w.writerow({k: row.get(k, "") for k in JOURNAL_FIELDS})
 
 
 def ts(s):
@@ -102,7 +117,32 @@ class Bot:
         mark = 15 - a.entry_start / 60
         trend = "any trend" if a.min_price <= 0.5 else f"only if the favourite costs {a.min_price * 100:.0f}c or more"
         return (f"At the {mark:g}:00 mark ({a.entry_start / 60:g} min left), bet ${a.stake:.0f} on the way BTC is "
-                f"trending (UP if above the start price, else DOWN); {trend}")
+                f"trending (UP if above the start price, else DOWN); {trend}. Limits: stop for the day at "
+                f"-${a.daily_loss:.0f}, halt at -${a.kill_drawdown:.0f} from the high")
+
+    def equity(self):
+        return self.st["cash"] + sum(p["cost"] for p in self.st["positions"].values())
+
+    def risk_block(self):
+        """Return a reason string if new bets are blocked by the playbook's risk rules, else None."""
+        a = self.a
+        if self.st.get("halted"):
+            return f"HALTED: {self.st['halted']} (restart with --clear-halt after review)"
+        eq = self.equity()
+        peak = self.st.setdefault("peak_equity", self.st["start_cash"])
+        if eq > peak:
+            self.st["peak_equity"] = peak = eq
+        if peak - eq >= a.kill_drawdown:
+            self.st["halted"] = f"equity ${eq:.2f} is ${peak - eq:.2f} below its high of ${peak:.2f}"
+            self.save()
+            print(f"{iso(time.time())} KILL SWITCH: {self.st['halted']}")
+            return f"HALTED: {self.st['halted']}"
+        today = datetime.now(timezone.utc).date()
+        day_pnl = sum(c["pnl"] for c in self.st["closed"]
+                      if datetime.fromtimestamp(c["closed"], timezone.utc).date() == today)
+        if day_pnl <= -a.daily_loss:
+            return f"daily loss limit hit ({day_pnl:+.2f} today, limit -{a.daily_loss:.0f}); no bets until 00:00 UTC"
+        return None
 
     def save(self):
         self.st["done"] = sorted(self.done)[-500:]
@@ -135,6 +175,15 @@ class Bot:
                                       "secs_left": p["secs_left"], "settle_value": m.get("expiration_value"),
                                       "strike": m.get("floor_strike")})
             del self.st["positions"][tk]
+            journal({"trade_id": tk, "strategy": self.a.name, "mode": MODE, "market": tk, "side": p["side"],
+                     "entry_time": iso(p["opened"]), "entry_price": f"{p['price']:.4f}", "size": p["contracts"],
+                     "stop": "0 (binary: max loss = stake)", "target": "1.00",
+                     "exit_time": iso(time.time()), "exit_price": "1.00" if payout else "0.00",
+                     "fees": f"{p['cost'] - p['contracts'] * p['price']:.2f}", "funding": "", "slippage": "",
+                     "pnl": f"{pnl:+.2f}", "r_multiple": f"{pnl / p['cost']:+.3f}",
+                     "reason_in": p.get("reason_in", ""),
+                     "reason_out": f"settled {res.upper()}: BTC avg {m.get('expiration_value')} vs start {m.get('floor_strike')}",
+                     "regime": "", "backtest_expected_r": self.a.expected_r, "notes": ""})
             log({"time": iso(time.time()), "event": "SETTLE", "ticker": tk, "side": p["side"],
                  "contracts": p["contracts"], "pnl": f"{pnl:+.2f}", "cash": f"{self.st['cash']:.2f}",
                  "title": p["title"]})
@@ -182,7 +231,9 @@ class Bot:
         self.st["positions"][tk] = {"ticker": tk, "event": m["event_ticker"], "side": side, "contracts": n,
                                     "cost": cost, "price": avg, "secs_left": round(left, 1),
                                     "title": f"BTC {'UP' if side == 'yes' else 'DOWN'} vs {m.get('yes_sub_title', '')}",
-                                    "opened": time.time()}
+                                    "opened": time.time(),
+                                    "reason_in": f"trend {'UP' if side == 'yes' else 'DOWN'}, best ask {ask:.2f}, "
+                                                 f"{left:.0f}s left"}
         self.done.add(tk)
         log({"time": iso(time.time()), "event": "FILL", "ticker": tk, "side": side, "contracts": n,
              "price": f"{avg:.4f}", "fee": f"{fe:.2f}", "cash": f"{self.st['cash']:.2f}",
@@ -193,6 +244,7 @@ class Bot:
 
     def run(self):
         a = self.a
+        print(f"MODE: {MODE}")
         print(self.describe()); print(f"state: {STATE}")
         self.save()
         report(self.st)
@@ -215,10 +267,14 @@ class Bot:
                 note = ("bet placed this window, waiting for settlement" if m["ticker"] in self.st["positions"]
                         else "no bet this window (trend too weak); waiting for the next one")
             elif a.entry_end <= left <= a.entry_start:
-                try:
-                    note = self.try_enter(m, left)
-                except Exception as e:
-                    note = f"error: {e}"
+                block = self.risk_block()
+                if block:
+                    note = block
+                else:
+                    try:
+                        note = self.try_enter(m, left)
+                    except Exception as e:
+                        note = f"error: {e}"
                 if left <= a.entry_end + a.poll and m["ticker"] not in self.done:
                     self.done.add(m["ticker"])  # window passed without a qualifying price: skip it
                     self.save()
@@ -255,7 +311,11 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--name", default="btc15")
     ap.add_argument("--bankroll", type=float, default=1000.0)
-    ap.add_argument("--stake", type=float, default=50.0)
+    ap.add_argument("--stake", type=float, default=10.0, help="$ per bet (playbook: 1%% of bankroll)")
+    ap.add_argument("--daily-loss", type=float, default=30.0, help="no new bets for the UTC day after losing $N")
+    ap.add_argument("--kill-drawdown", type=float, default=150.0, help="halt everything $N below the equity high")
+    ap.add_argument("--clear-halt", action="store_true", help="resume after a kill-switch halt (after review)")
+    ap.add_argument("--expected-r", default="", help="backtest expected R per trade, for the journal")
     ap.add_argument("--entry-start", type=float, default=180.0, help="bet at this many seconds before close (180 = the 12:00 mark)")
     ap.add_argument("--entry-end", type=float, default=165.0, help="give up if no bet placed by N seconds before close")
     ap.add_argument("--min-price", type=float, default=0.50, help="only bet if the favourite costs at least this (0.50 = any trend)")
@@ -268,10 +328,12 @@ def main():
     a = ap.parse_args()
     set_paths(a.name)
     if a.reset:
-        for p in (STATE, LOG, STATUS):
+        for p in (STATE, LOG, STATUS, JOURNAL):
             if os.path.exists(p):
                 os.remove(p)
     bot = Bot(a)
+    if a.clear_halt and bot.st.get("halted"):
+        print(f"clearing halt: {bot.st.pop('halted')}"); bot.st["peak_equity"] = bot.equity(); bot.save()
     if a.report:
         report(bot.st); return
 

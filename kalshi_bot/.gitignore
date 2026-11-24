@@ -10,3 +10,4 @@ logs/
 btc_research_cache.jsonl
 archive/
 live_status_*.json
+trades_*.csv
