@@ -35,7 +35,8 @@ upgrade, and anything outside these rules.
 
 ## Time zone
 
-All times are UTC. Aaron hasn't set a local time zone yet.
+Aaron is on Pacific time (PST, UTC−8; PDT, UTC−7 from March to November). Data and logs stay in UTC.
+Reports to Aaron show Pacific time. The daily loss limit resets at 00:00 UTC, which is 4:00 pm PST.
 
 ## Current strategies
 
