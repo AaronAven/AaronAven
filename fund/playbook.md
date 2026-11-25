@@ -51,6 +51,9 @@ Reports to Aaron show Pacific time. The daily loss limit resets at 00:00 UTC, wh
 - Trade journal (section 13 format): `../kalshi_bot/trades_<run>.csv`, written by the bot at each settlement
 - Backtests: `backtests/README.md` indexes every research run and its saved output
 - Lessons: `learning.md`. Problems: `incidents.md`. Data sources: `data/sources.md`
+- Nightly research: a scheduled task runs at 11:47 pm Pacific in a fresh cloud session. It refreshes
+  Kalshi data, re-runs the backtests, tests one idea, and writes a morning brief to `briefs/<date>.md`.
+  It never changes the bot's rules. Paper trades from the Mac are included only if copied to `paper_results/`
 
 ## Golden rules
 
